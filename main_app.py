@@ -1,7 +1,6 @@
 import streamlit as st
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-import json
 
 # 비밀번호 설정
 PASSWORD = "jelso0428"
@@ -25,14 +24,16 @@ else:
 
     # Google Sheets 연동
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    credentials_dict = json.loads(st.secrets["GOOGLE_CREDENTIALS"])
+
+    credentials_dict = st.secrets["GOOGLE_CREDENTIALS"]
     credentials = ServiceAccountCredentials.from_json_keyfile_dict(credentials_dict, scope)
+
     gc = gspread.authorize(credentials)
     sheet = gc.open("psych-scales").worksheet("Scales")
 
     data = sheet.get_all_records()
 
-    # 검사 선택 UI 개선 (눈에 잘 띄도록 st.container + Markdown 사용)
+    # 검사 선택 UI 개선
     with st.container(border=True):
         st.markdown("### 📌 **심리검사 선택**")
         for entry in data:
@@ -40,8 +41,12 @@ else:
             url = entry['url']
             if st.button(f"🟢 {name}", key=f"start_button_{name}"):
                 st.session_state.selected_url = url
+                st.session_state.selected_name = name  # 선택된 검사 이름 저장
 
-    # 선택한 검사로 이동하는 링크
+    # 선택된 검사 결과 출력
+    if "selected_name" in st.session_state:
+        st.info(f"✅ 선택된 검사: **{st.session_state.selected_name}**")
+
     if "selected_url" in st.session_state:
         st.link_button("🚀 선택한 심리검사 바로가기", st.session_state.selected_url)
 
@@ -54,7 +59,7 @@ else:
     with st.expander("➕ 신규 검사 추가하기"):
         new_name = st.text_input("새로운 검사 이름 입력")
         new_url = st.text_input("새로운 검사 URL 입력")
-        if st.button("추가하기"):
+        if st.button("추가하기", key="add_new"):
             if new_name and new_url:
                 sheet.append_row([new_name, new_url])
                 st.success(f"{new_name}이(가) 추가되었습니다.")
@@ -66,7 +71,7 @@ else:
     with st.expander("🗑️ 기존 검사 삭제하기"):
         names = [entry['name'] for entry in data]
         delete_name = st.selectbox("삭제할 검사 선택", names)
-        if st.button("삭제하기"):
+        if st.button("삭제하기", key="delete_old"):
             if delete_name:
                 cell = sheet.find(delete_name)
                 sheet.delete_rows(cell.row)

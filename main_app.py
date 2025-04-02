@@ -1,91 +1,73 @@
 import streamlit as st
+import json
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-import json
 
-# Google Sheets 설정
+# 인증정보 불러오기
+credentials_dict = dict(st.secrets["GOOGLE_CREDENTIALS"])
 scope = [
     "https://spreadsheets.google.com/feeds",
     "https://www.googleapis.com/auth/drive"
 ]
 
-# Streamlit secrets에서 credentials 정보 로드
-credentials_dict = json.loads(st.secrets["GOOGLE_CREDENTIALS"])
+# 구글 인증
 credentials = ServiceAccountCredentials.from_json_keyfile_dict(credentials_dict, scope)
 gc = gspread.authorize(credentials)
 
-# Google Sheet 열기 (정확한 제목을 확인하여 입력)
-sheet = gc.open("psych-scales").worksheet("Scales")
+# Google Sheets 로드
+sheet = gc.open("psych-scales").worksheet("Scales")  # 정확한 시트명과 워크시트명 확인 필수
 
+# 데이터 불러오기 함수
 def load_data():
     return sheet.get_all_records()
 
-def add_scale(name, url):
-    sheet.append_row([name, url])
+# 데이터 저장 함수
+def save_data(scales_data):
+    sheet.clear()
+    sheet.append_row(["name", "url"])
+    for entry in scales_data:
+        sheet.append_row([entry["name"], entry["url"]])
 
-def delete_scale(name):
-    cell = sheet.find(name)
-    if cell:
-        sheet.delete_rows(cell.row)
+# 최초 데이터 로드
+data = load_data()
 
-# 앱 제목
-st.title("🧠 심리검사 포털")
+st.title("🔖 심리검사 포털")
 
-# 비밀번호 기반 접근 제어
-def check_password():
-    def password_entered():
-        if st.session_state["password"] == "jelso0428":
-            st.session_state["password_correct"] = True
-            del st.session_state["password"]
+# 각 검사를 선택할 수 있는 버튼 생성 (중복 방지)
+for entry in data:
+    name = entry["name"]
+    url = entry["url"]
+    if st.button(f"{name} 시작하기", key=f"start_{name}"):
+        st.link_button(f"{name} 열기", url)
+
+st.divider()
+
+# 검사 추가 및 삭제 섹션
+st.header("⚙️ 검사 관리하기")
+
+# 신규 검사 추가
+with st.form("add_scale_form"):
+    new_scale_name = st.text_input("추가할 검사 이름")
+    new_scale_url = st.text_input("추가할 검사 URL")
+    submit_add = st.form_submit_button("검사 추가")
+
+    if submit_add:
+        if new_scale_name and new_scale_url:
+            data.append({"name": new_scale_name, "url": new_scale_url})
+            save_data(data)
+            st.success(f"{new_scale_name} 검사가 추가되었습니다.")
+            st.rerun()
         else:
-            st.error("비밀번호가 잘못되었습니다.")
+            st.error("검사 이름과 URL을 모두 입력해주세요.")
 
-    if "password_correct" not in st.session_state:
-        st.text_input("비밀번호를 입력하세요:", type="password", on_change=password_entered, key="password")
-        return False
-    return True
+# 기존 검사 삭제
+with st.form("delete_scale_form"):
+    scale_names = [entry["name"] for entry in data]
+    delete_scale_name = st.selectbox("삭제할 검사를 선택하세요", scale_names)
+    submit_delete = st.form_submit_button("검사 삭제")
 
-if check_password():
-    data = load_data()
-
-    # 심리검사 목록 표시
-    st.write("### 📚 심리검사 목록")
-    for i, entry in enumerate(data):
-        name = entry['name']
-        url = entry['url']
-        col1, col2 = st.columns([3, 1])
-
-        with col1:
-            st.markdown(f"**{name}**")
-
-        with col2:
-            if st.button(f"{name} 시작하기", key=f"start_button_{i}"):
-                st.switch_page(url)
-
-    st.divider()
-
-    # 신규 검사 추가 폼
-    with st.form("new_scale_form"):
-        st.write("### ➕ 새로운 심리검사 추가")
-        new_name = st.text_input("검사 이름")
-        new_url = st.text_input("검사 URL (Streamlit 앱 주소)")
-        submitted = st.form_submit_button("추가하기")
-
-        if submitted:
-            if new_name and new_url:
-                add_scale(new_name, new_url)
-                st.success(f"'{new_name}' 검사가 추가되었습니다. 새로고침 하세요.")
-            else:
-                st.error("모든 정보를 입력해주세요.")
-
-    # 기존 검사 삭제 UI
-    st.write("### ❌ 기존 심리검사 삭제")
-    del_names = [entry['name'] for entry in data]
-    selected_name = st.selectbox("삭제할 검사를 선택하세요:", ["선택하세요"] + del_names)
-
-    if st.button("선택한 검사 삭제"):
-        if selected_name != "선택하세요":
-            delete_scale(selected_name)
-            st.success(f"'{selected_name}' 검사가 삭제되었습니다. 새로고침 하세요.")
-        else:
-            st.error("삭제할 검사를 선택해주세요.")
+    if submit_delete:
+        data = [entry for entry in data if entry["name"] != delete_scale_name]
+        save_data(data)
+        st.success(f"{delete_scale_name} 검사가 삭제되었습니다.")
+        st.rerun()
